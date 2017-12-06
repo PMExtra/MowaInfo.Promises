@@ -7,7 +7,7 @@ namespace MowaInfo.Promises
     public class Promise<T> : TaskCompletionSource<T>
     {
         private readonly object _lockObject = new object();
-        private DateTimeOffset _deadline = DateTimeOffset.MaxValue;
+        private DateTimeOffset? _deadline;
 
         public Promise()
         {
@@ -33,7 +33,7 @@ namespace MowaInfo.Promises
 
         public DateTimeOffset Starting { get; } = DateTimeOffset.Now;
 
-        public DateTimeOffset Deadline
+        public DateTimeOffset? Deadline
         {
             get => _deadline;
             set
@@ -41,12 +41,27 @@ namespace MowaInfo.Promises
                 _deadline = value;
                 lock (_lockObject)
                 {
-                    CancellationTokenSource?.CancelAfter(Countdown);
+                    if (Countdown.HasValue)
+                    {
+                        var countdown = Countdown.Value;
+                        if (countdown < TimeSpan.Zero)
+                        {
+                            CancellationTokenSource?.Cancel();
+                        }
+                        else
+                        {
+                            CancellationTokenSource?.CancelAfter(countdown);
+                        }
+                    }
+                    else
+                    {
+                        CancellationTokenSource.CancelAfter(Timeout.Infinite);
+                    }
                 }
             }
         }
 
-        public TimeSpan Countdown => Deadline - DateTimeOffset.Now;
+        public TimeSpan? Countdown => Deadline - DateTimeOffset.Now;
 
         private void Init()
         {
@@ -63,26 +78,37 @@ namespace MowaInfo.Promises
             });
         }
 
-        public DateTimeOffset SetTimeout(TimeSpan timeout, TimeOrigin origin)
+        public DateTimeOffset? SetTimeout(TimeSpan timeout, TimeOrigin origin)
         {
-            switch (origin)
+            if (timeout == Timeout.InfiniteTimeSpan)
             {
-                case TimeOrigin.Begin:
-                    Deadline = Starting + timeout;
-                    break;
+                Deadline = null;
+            }
+            else if (timeout < TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(nameof(timeout), timeout, null);
+            }
+            else
+            {
+                switch (origin)
+                {
+                    case TimeOrigin.Begin:
+                        Deadline = Starting + timeout;
+                        break;
 
-                case TimeOrigin.Current:
-                    Deadline = DateTimeOffset.Now + timeout;
-                    break;
+                    case TimeOrigin.Current:
+                        Deadline = DateTimeOffset.Now + timeout;
+                        break;
 
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(origin), origin, null);
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(origin), origin, null);
+                }
             }
 
             return Deadline;
         }
 
-        public DateTimeOffset SetTimeout(int millisecondsTimeout, TimeOrigin origin)
+        public DateTimeOffset? SetTimeout(int millisecondsTimeout, TimeOrigin origin)
         {
             return SetTimeout(TimeSpan.FromMilliseconds(millisecondsTimeout), origin);
         }
